@@ -1,0 +1,10 @@
+database: data/botrading.duckdb
+rpc:
+  primary: https://api.mainnet-beta.solana.com
+  fallback: https://solana-rpc.publicnode.com
+  interval_seconds: 30
+wallets:
+  - name: demo_wallet_1
+    address: 11111111111111111111111111111111
+  - name: demo_wallet_2
+    address: 22222222222222222222222222222222
