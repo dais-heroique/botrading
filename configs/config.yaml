@@ -6,4 +6,4 @@ rpc:
   signature_limit: 100
 wallets:
   - name: demo_system
-    address: 11111111111111111111111111111111
+    address: "11111111111111111111111111111111"
