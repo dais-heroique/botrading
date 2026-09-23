@@ -38,14 +38,19 @@ class SolanaCollector:
         )
 
     def _sync_tokens(self, wallet, address):
-        result = self.rpc_call(
-            "getTokenAccountsByOwner",
-            [
-                address,
-                {"programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"},
-                {"encoding": "jsonParsed"},
-            ],
-        ) or {}
+        try:
+            result = self.rpc_call(
+                "getTokenAccountsByOwner",
+                [
+                    address,
+                    {"programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"},
+                    {"encoding": "jsonParsed"},
+                ],
+            ) or {}
+        except RuntimeError:
+            return 0
+
+        synced = 0
         for item in result.get("value", []):
             info = item.get("account", {}).get("data", {}).get("parsed", {}).get("info", {})
             token_amount = info.get("tokenAmount", {})
@@ -61,6 +66,8 @@ class SolanaCollector:
                     int(token_amount.get("decimals") or 0),
                 ],
             )
+            synced += 1
+        return synced
 
     def collect_once(self):
         limit = int(self.config["rpc"].get("signature_limit", 100))
@@ -78,13 +85,16 @@ class SolanaCollector:
                     "SELECT 1 FROM wallet_events WHERE wallet = ? AND signature = ?",
                     [address, signature],
                 ).fetchone()
+                if exists:
+                    continue
+
                 try:
-                    tx = None if exists else self._transaction(signature)
+                    tx = self._transaction(signature)
                 except RuntimeError:
                     tx = {"collector_error": "transaction_unavailable"}
 
                 self.db.execute(
-                    """INSERT OR REPLACE INTO wallet_events
+                    """INSERT INTO wallet_events
                     (wallet, signature, block_time, slot, err, memo, raw_json, tx_json)
                     VALUES (?, ?, CASE WHEN ? IS NULL THEN NULL ELSE to_timestamp(?) END,
                             ?, ?, ?, ?, ?)""",
@@ -97,7 +107,7 @@ class SolanaCollector:
                         json.dumps(row.get("err")),
                         row.get("memo"),
                         json.dumps(row),
-                        json.dumps(tx) if tx is not None else None,
+                        json.dumps(tx),
                     ],
                 )
                 total += 1
