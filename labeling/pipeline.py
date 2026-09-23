@@ -24,7 +24,7 @@ def label_database(config, tp=0.05, sl=0.03, horizon=20):
             db.execute(
                 """INSERT INTO labels (wallet, ts, label, barrier, return)
                 VALUES (?, ?, ?, ?, ?)""",
-                [wallet, row.ts, int(label.label), label.barrier, float(label.return)],
+                [wallet, row.ts, int(label.label), label.barrier, float(getattr(label, "return"))],
             )
             total += 1
 
