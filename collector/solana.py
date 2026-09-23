@@ -37,7 +37,7 @@ class SolanaCollector:
             ],
         )
 
-    def _sync_tokens(self, wallet, address):
+    def _sync_tokens(self, address):
         try:
             result = self.rpc_call(
                 "getTokenAccountsByOwner",
@@ -75,11 +75,23 @@ class SolanaCollector:
 
         for wallet in self.config["wallets"]:
             address = str(wallet["address"])
+            state = self.db.execute(
+                "SELECT last_signature FROM collector_state WHERE wallet = ?",
+                [address],
+            ).fetchone()
+            last_signature = state[0] if state else None
+
             rows = self.rpc_call(
                 "getSignaturesForAddress", [address, {"limit": limit}]
             ) or []
 
+            fresh = []
             for row in rows:
+                if row["signature"] == last_signature:
+                    break
+                fresh.append(row)
+
+            for row in reversed(fresh):
                 signature = row["signature"]
                 exists = self.db.execute(
                     "SELECT 1 FROM wallet_events WHERE wallet = ? AND signature = ?",
@@ -112,13 +124,15 @@ class SolanaCollector:
                 )
                 total += 1
 
-            self.db.execute(
-                """INSERT OR REPLACE INTO collector_state
-                (wallet, last_signature, updated_at)
-                VALUES (?, ?, current_timestamp)""",
-                [address, rows[0]["signature"] if rows else None],
-            )
-            self._sync_tokens(wallet, address)
+            if rows:
+                self.db.execute(
+                    """INSERT OR REPLACE INTO collector_state
+                    (wallet, last_signature, updated_at)
+                    VALUES (?, ?, current_timestamp)""",
+                    [address, rows[0]["signature"]],
+                )
+
+            self._sync_tokens(address)
 
         self.db.commit()
         return total
