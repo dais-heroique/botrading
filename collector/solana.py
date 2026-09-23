@@ -32,7 +32,7 @@ class SolanaCollector:
                 signature,
                 {
                     "encoding": "jsonParsed",
-                    "maxSupportedTransactionVersion": 0,
+                    "maxSupportedTransactionVersion": 1,
                 },
             ],
         )
@@ -78,7 +78,10 @@ class SolanaCollector:
                     "SELECT 1 FROM wallet_events WHERE wallet = ? AND signature = ?",
                     [address, signature],
                 ).fetchone()
-                tx = None if exists else self._transaction(signature)
+                try:
+                    tx = None if exists else self._transaction(signature)
+                except RuntimeError:
+                    tx = {"collector_error": "transaction_unavailable"}
 
                 self.db.execute(
                     """INSERT OR REPLACE INTO wallet_events
