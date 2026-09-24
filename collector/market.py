@@ -11,7 +11,7 @@ class MarketData:
         response = requests.get(f"{self.BASE_URL}/{mint}", timeout=self.timeout)
         response.raise_for_status()
         data = response.json()
-        pairs = [p for p in data.get("pairs", []) if p.get("chainId") == "solana"]
+        pairs = [p for p in (data.get("pairs") or []) if p.get("chainId") == "solana"]
         if not pairs:
             return None
 
