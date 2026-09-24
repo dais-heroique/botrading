@@ -5,6 +5,13 @@ rpc:
   interval_seconds: 30
   signature_limit: 100
   max_pages: 10
+discovery:
+  enabled: true
+  refresh_minutes: 15
+  top_n: 10
+  days: 7
+  min_trades: 20
+  min_invested_usd: 1000
 wallets:
   - name: tracked_wallet
     address: "REPLACE_WITH_YOUR_PUBLIC_WALLET"
