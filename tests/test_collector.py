@@ -71,6 +71,20 @@ class CollectorTests(unittest.TestCase):
                 2,
             )
 
+    def test_configured_and_discovered_wallets_are_merged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            collector = FakeCollector(make_config(tmp))
+            collector.db.execute(
+                """INSERT INTO tracked_wallets
+                (wallet, name, source, updated_at)
+                VALUES (?, ?, ?, current_timestamp)""",
+                ["222222222222222222222222222222222222222222222222", "top", "test"],
+            )
+            collector.db.commit()
+            wallets = collector._configured_wallets()
+            self.assertEqual(len(wallets), 2)
+            self.assertEqual(wallets[1][0], "222222222222222222222222222222222222222222222222")
+
     def test_repeated_collection_deduplicates(self):
         with tempfile.TemporaryDirectory() as tmp:
             collector = FakeCollector(make_config(tmp))
