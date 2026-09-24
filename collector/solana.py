@@ -2,6 +2,8 @@ import json
 import os
 import time
 import requests
+
+from collector.market import MarketData
 from storage.db import connect
 
 
@@ -10,6 +12,7 @@ class SolanaCollector:
         self.config = config
         self.rpc = [config["rpc"]["primary"], config["rpc"]["fallback"]]
         self.db = connect(config["database"])
+        self.market = MarketData()
 
     def rpc_call(self, method, params):
         payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
@@ -49,26 +52,55 @@ class SolanaCollector:
                 ],
             ) or {}
         except RuntimeError:
-            return 0
+            return []
 
-        synced = 0
+        tokens = []
         for item in result.get("value", []):
             info = item.get("account", {}).get("data", {}).get("parsed", {}).get("info", {})
             token_amount = info.get("tokenAmount", {})
+            mint = info.get("mint")
+            if not mint:
+                continue
+
+            amount = float(token_amount.get("uiAmount") or 0)
+            decimals = int(token_amount.get("decimals") or 0)
+
             self.db.execute(
                 """INSERT OR REPLACE INTO wallet_tokens
                 (wallet, mint, token_account, amount, decimals, updated_at)
                 VALUES (?, ?, ?, ?, ?, current_timestamp)""",
+                [address, mint, item.get("pubkey"), amount, decimals],
+            )
+            tokens.append(mint)
+
+        return sorted(set(tokens))
+
+    def _snapshot_markets(self, address, mints):
+        written = 0
+        for mint in mints:
+            try:
+                snapshot = self.market.token_snapshot(mint)
+            except (requests.RequestException, ValueError):
+                continue
+            if not snapshot or snapshot["price"] is None:
+                continue
+
+            self.db.execute(
+                """INSERT INTO market_snapshots
+                (wallet, mint, ts, price, volume, liquidity, holders, source)
+                VALUES (?, ?, current_timestamp, ?, ?, ?, ?, ?)""",
                 [
                     address,
-                    info.get("mint"),
-                    item.get("pubkey"),
-                    float(token_amount.get("uiAmount") or 0),
-                    int(token_amount.get("decimals") or 0),
+                    mint,
+                    snapshot["price"],
+                    snapshot["volume"],
+                    snapshot["liquidity"],
+                    snapshot["holders"],
+                    snapshot["source"],
                 ],
             )
-            synced += 1
-        return synced
+            written += 1
+        return written
 
     def _new_signatures(self, address, last_signature, limit, max_pages):
         fresh = []
@@ -160,7 +192,8 @@ class SolanaCollector:
                     [address, latest[0]["signature"]],
                 )
 
-            self._sync_tokens(address)
+            mints = self._sync_tokens(address)
+            self._snapshot_markets(address, mints)
 
         self.db.commit()
         return total
@@ -178,6 +211,7 @@ class SolanaCollector:
 
 def load_config(path="configs/config.yaml"):
     import yaml
+
     with open(path, encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
