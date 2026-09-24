@@ -8,6 +8,7 @@ from risk.engine import RiskEngine
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--collect", action="store_true")
+    p.add_argument("--watch", action="store_true")
     p.add_argument("--init-db", action="store_true")
     p.add_argument("--label", action="store_true")
     p.add_argument("--risk-check", action="store_true")
@@ -20,8 +21,15 @@ def main():
     if args.init_db:
         connect(cfg["database"]).close()
         print("database initialized")
-    if args.collect:
-        print(f"events collected: {SolanaCollector(cfg).collect_once()}")
+    if args.collect or args.watch:
+        collector = SolanaCollector(cfg)
+        try:
+            if args.watch:
+                collector.watch()
+            else:
+                print(f"events collected: {collector.collect_once()}")
+        finally:
+            collector.close()
     if args.label:
         print(
             f"labels written: "
