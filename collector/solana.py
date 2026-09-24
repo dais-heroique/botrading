@@ -4,6 +4,7 @@ import time
 import requests
 
 from collector.market import MarketData
+from collector.discovery import WalletDiscovery
 from storage.db import connect
 
 
@@ -13,6 +14,7 @@ class SolanaCollector:
         self.rpc = [config["rpc"]["primary"], config["rpc"]["fallback"]]
         self.db = connect(config["database"])
         self.market = MarketData()
+        self.discovery = WalletDiscovery()
 
     def rpc_call(self, method, params):
         payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
@@ -163,15 +165,60 @@ class SolanaCollector:
 
         return fresh
 
+    def _configured_wallets(self):
+        wallets = []
+        for wallet in self.config.get("wallets", []):
+            address = str(wallet.get("address", "")).strip()
+            if address and address != "REPLACE_WITH_YOUR_PUBLIC_WALLET":
+                wallets.append((address, wallet.get("name", "configured"), "configured"))
+
+        rows = self.db.execute(
+            "SELECT wallet, name, source FROM tracked_wallets ORDER BY updated_at DESC"
+        ).fetchall()
+        seen = {address for address, _, _ in wallets}
+        for address, name, source in rows:
+            if address not in seen:
+                wallets.append((address, name or "discovered", source or "discovered"))
+                seen.add(address)
+        return wallets
+
+    def discover_axiom_wallets(self):
+        discovery = self.config.get("discovery", {})
+        rows = self.discovery.top_axiom_wallets(
+            limit=discovery.get("top_n", 10),
+            days=discovery.get("days", 7),
+            min_trades=discovery.get("min_trades", 20),
+            min_invested=discovery.get("min_invested_usd", 1000),
+        )
+        for row in rows:
+            self.db.execute(
+                """INSERT INTO tracked_wallets
+                (wallet, name, source, realized_pnl, win_rate, trades, discovered_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, now(), now())
+                ON CONFLICT (wallet) DO UPDATE SET
+                    source = excluded.source,
+                    realized_pnl = excluded.realized_pnl,
+                    win_rate = excluded.win_rate,
+                    trades = excluded.trades,
+                    updated_at = now()""",
+                [
+                    row["wallet"],
+                    "axiom_top_trader",
+                    row["source"],
+                    row["realized_pnl"],
+                    row["win_rate"],
+                    row["trades"],
+                ],
+            )
+        self.db.commit()
+        return len(rows)
+
     def collect_once(self):
         limit = max(1, int(self.config["rpc"].get("signature_limit", 100)))
         max_pages = max(1, int(self.config["rpc"].get("max_pages", 10)))
         total = 0
 
-        for wallet in self.config["wallets"]:
-            address = str(wallet["address"]).strip()
-            if not address or address == "REPLACE_WITH_YOUR_PUBLIC_WALLET":
-                raise ValueError("Set SOLANA_WALLET_ADDRESS to your Solana public wallet address")
+        for address, wallet_name, wallet_source in self._configured_wallets():
             if len(address) < 32 or len(address) > 48:
                 raise ValueError("Invalid Solana wallet address length")
 
@@ -240,9 +287,26 @@ class SolanaCollector:
 
     def watch(self):
         interval = max(5, int(self.config["rpc"].get("interval_seconds", 30)))
+        discovery_cfg = self.config.get("discovery", {})
+        discovery_enabled = bool(discovery_cfg.get("enabled", True))
+        discovery_every = max(1, int(discovery_cfg.get("refresh_minutes", 15)))
+        last_discovery = 0.0
+
         while True:
             started = time.monotonic()
-            print(f"events collected: {self.collect_once()}", flush=True)
+            if discovery_enabled and time.monotonic() - last_discovery >= discovery_every * 60:
+                try:
+                    found = self.discover_axiom_wallets()
+                    print(f"axiom wallets discovered: {found}", flush=True)
+                    last_discovery = time.monotonic()
+                except (requests.RequestException, ValueError, RuntimeError) as exc:
+                    print(f"wallet discovery skipped: {exc}", flush=True)
+
+            print(
+                f"events collected: {self.collect_once()} | "
+                f"tracked wallets: {len(self._configured_wallets())}",
+                flush=True,
+            )
             time.sleep(max(0, interval - (time.monotonic() - started)))
 
     def close(self):
