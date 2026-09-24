@@ -27,6 +27,16 @@ CREATE TABLE IF NOT EXISTS observed_tokens (\n wallet TEXT,\n mint TEXT,\n first
  last_signature TEXT,
  updated_at TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS tracked_wallets (
+ wallet TEXT PRIMARY KEY,
+ name TEXT,
+ source TEXT,
+ realized_pnl DOUBLE,
+ win_rate DOUBLE,
+ trades BIGINT,
+ discovered_at TIMESTAMP,
+ updated_at TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS market_snapshots (
  wallet TEXT,
  mint TEXT,
