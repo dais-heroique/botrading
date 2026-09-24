@@ -29,14 +29,17 @@ CREATE TABLE IF NOT EXISTS collector_state (
 );
 CREATE TABLE IF NOT EXISTS market_snapshots (
  wallet TEXT,
+ mint TEXT,
  ts TIMESTAMP,
  price DOUBLE,
  volume DOUBLE,
  liquidity DOUBLE,
- holders BIGINT
+ holders BIGINT,
+ source TEXT
 );
 CREATE TABLE IF NOT EXISTS labels (
  wallet TEXT,
+ mint TEXT,
  ts TIMESTAMP,
  label INTEGER,
  barrier TEXT,
@@ -51,4 +54,7 @@ def connect(path: str):
         if stmt.strip():
             con.execute(stmt)
     con.execute("ALTER TABLE wallet_events ADD COLUMN IF NOT EXISTS tx_json TEXT")
+    con.execute("ALTER TABLE market_snapshots ADD COLUMN IF NOT EXISTS mint TEXT")
+    con.execute("ALTER TABLE market_snapshots ADD COLUMN IF NOT EXISTS source TEXT")
+    con.execute("ALTER TABLE labels ADD COLUMN IF NOT EXISTS mint TEXT")
     return con
