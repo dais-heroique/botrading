@@ -69,8 +69,38 @@ class SolanaCollector:
             synced += 1
         return synced
 
+    def _new_signatures(self, address, last_signature, limit, max_pages):
+        fresh = []
+        before = None
+
+        for _ in range(max_pages):
+            config = {"limit": limit}
+            if before:
+                config["before"] = before
+
+            rows = self.rpc_call(
+                "getSignaturesForAddress", [address, config]
+            ) or []
+            if not rows:
+                break
+
+            reached_cursor = False
+            for row in rows:
+                if row["signature"] == last_signature:
+                    reached_cursor = True
+                    break
+                fresh.append(row)
+
+            if reached_cursor or len(rows) < limit:
+                break
+
+            before = rows[-1]["signature"]
+
+        return fresh
+
     def collect_once(self):
-        limit = int(self.config["rpc"].get("signature_limit", 100))
+        limit = max(1, int(self.config["rpc"].get("signature_limit", 100)))
+        max_pages = max(1, int(self.config["rpc"].get("max_pages", 10)))
         total = 0
 
         for wallet in self.config["wallets"]:
@@ -81,32 +111,17 @@ class SolanaCollector:
             ).fetchone()
             last_signature = state[0] if state else None
 
-            rows = self.rpc_call(
-                "getSignaturesForAddress", [address, {"limit": limit}]
-            ) or []
-
-            fresh = []
-            for row in rows:
-                if row["signature"] == last_signature:
-                    break
-                fresh.append(row)
+            fresh = self._new_signatures(address, last_signature, limit, max_pages)
 
             for row in reversed(fresh):
                 signature = row["signature"]
-                exists = self.db.execute(
-                    "SELECT 1 FROM wallet_events WHERE wallet = ? AND signature = ?",
-                    [address, signature],
-                ).fetchone()
-                if exists:
-                    continue
-
                 try:
                     tx = self._transaction(signature)
                 except RuntimeError:
                     tx = {"collector_error": "transaction_unavailable"}
 
                 self.db.execute(
-                    """INSERT INTO wallet_events
+                    """INSERT OR IGNORE INTO wallet_events
                     (wallet, signature, block_time, slot, err, memo, raw_json, tx_json)
                     VALUES (?, ?, CASE WHEN ? IS NULL THEN NULL ELSE to_timestamp(?) END,
                             ?, ?, ?, ?, ?)""",
@@ -124,12 +139,15 @@ class SolanaCollector:
                 )
                 total += 1
 
-            if rows:
+            latest = self.rpc_call(
+                "getSignaturesForAddress", [address, {"limit": 1}]
+            ) or []
+            if latest:
                 self.db.execute(
                     """INSERT OR REPLACE INTO collector_state
                     (wallet, last_signature, updated_at)
                     VALUES (?, ?, current_timestamp)""",
-                    [address, rows[0]["signature"]],
+                    [address, latest[0]["signature"]],
                 )
 
             self._sync_tokens(address)
