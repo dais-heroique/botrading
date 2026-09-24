@@ -230,6 +230,7 @@ class SolanaCollector:
             last_signature = state[0] if state else None
 
             fresh = self._new_signatures(address, last_signature, limit, max_pages)
+            fetch_failed = False
 
             for row in reversed(fresh):
                 signature = row["signature"]
@@ -242,8 +243,11 @@ class SolanaCollector:
 
                 try:
                     tx = self._transaction(signature)
+                    if tx is None:
+                        raise RuntimeError("transaction unavailable")
                 except RuntimeError:
-                    tx = {"collector_error": "transaction_unavailable"}
+                    fetch_failed = True
+                    continue
 
                 self.db.execute(
                     """INSERT INTO wallet_events
@@ -265,7 +269,7 @@ class SolanaCollector:
                 total += 1
 
             latest = self.rpc_call("getSignaturesForAddress", [address, {"limit": 1}]) or []
-            if latest:
+            if latest and not fetch_failed:
                 self.db.execute(
                     """INSERT OR REPLACE INTO collector_state
                     (wallet, last_signature, updated_at)
