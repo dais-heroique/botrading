@@ -64,6 +64,8 @@ class SolanaCollector:
 
             amount = float(token_amount.get("uiAmount") or 0)
             decimals = int(token_amount.get("decimals") or 0)
+            if amount <= 0:
+                continue
 
             self.db.execute(
                 """INSERT OR REPLACE INTO wallet_tokens
