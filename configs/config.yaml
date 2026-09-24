@@ -4,6 +4,7 @@ rpc:
   fallback: https://solana-rpc.publicnode.com
   interval_seconds: 30
   signature_limit: 100
+  max_pages: 10
 wallets:
-  - name: demo_system
-    address: "11111111111111111111111111111111"
+  - name: tracked_wallet
+    address: "REPLACE_WITH_YOUR_PUBLIC_WALLET"
