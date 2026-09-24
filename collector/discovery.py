@@ -48,12 +48,34 @@ class WalletDiscovery:
             if not wallet:
                 continue
             period = row.get("period") or {}
+            days_stats = period.get("days") or {}
+            pnl = row.get("pnl") or {}
+            realized_pnl = (
+                period.get("realized")
+                or period.get("realizedPnl")
+                or period.get("realizedRaw")
+                or pnl.get("realized")
+                or row.get("realized_pnl")
+                or row.get("realizedPnl")
+            )
+            win_rate = (
+                period.get("winRate")
+                or days_stats.get("winRate")
+                or row.get("win_rate")
+                or row.get("winRate")
+            )
+            trades = (
+                period.get("trades")
+                or days_stats.get("trades")
+                or row.get("trades")
+                or row.get("totalTrades")
+            )
             wallets.append(
                 {
                     "wallet": wallet,
-                    "realized_pnl": period.get("realized") or row.get("realized_pnl"),
-                    "win_rate": period.get("winRate") or row.get("win_rate"),
-                    "trades": period.get("trades") or row.get("trades"),
+                    "realized_pnl": realized_pnl,
+                    "win_rate": win_rate,
+                    "trades": trades,
                     "source": "solana_tracker_axiom",
                 }
             )
