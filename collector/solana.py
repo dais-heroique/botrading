@@ -41,6 +41,24 @@ class SolanaCollector:
             ],
         )
 
+    def _record_observed_mints(self, address, tx):
+        mints = set()
+        meta = (tx or {}).get("meta") or {}
+        for key in ("preTokenBalances", "postTokenBalances"):
+            for balance in meta.get(key) or []:
+                mint = balance.get("mint")
+                if mint:
+                    mints.add(mint)
+
+        for mint in mints:
+            self.db.execute(
+                """INSERT INTO observed_tokens (wallet, mint, first_seen, last_seen)
+                VALUES (?, ?, current_timestamp, current_timestamp)
+                ON CONFLICT (wallet, mint) DO UPDATE SET last_seen = current_timestamp""",
+                [address, mint],
+            )
+        return mints
+
     def _sync_tokens(self, address):
         try:
             result = self.rpc_call(
