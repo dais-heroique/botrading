@@ -59,6 +59,20 @@ class SolanaCollector:
             )
         return mints
 
+    def _backfill_observed_tokens(self, address):
+        rows = self.db.execute(
+            "SELECT tx_json FROM wallet_events WHERE wallet = ? AND tx_json IS NOT NULL",
+            [address],
+        ).fetchall()
+        count = 0
+        for (raw_json,) in rows:
+            try:
+                tx = json.loads(raw_json)
+            except (TypeError, ValueError):
+                continue
+            count += len(self._record_observed_mints(address, tx))
+        return count
+
     def _sync_tokens(self, address):
         try:
             result = self.rpc_call(
