@@ -1,4 +1,5 @@
 import json
+import os
 import time
 import requests
 from storage.db import connect
@@ -78,9 +79,7 @@ class SolanaCollector:
             if before:
                 config["before"] = before
 
-            rows = self.rpc_call(
-                "getSignaturesForAddress", [address, config]
-            ) or []
+            rows = self.rpc_call("getSignaturesForAddress", [address, config]) or []
             if not rows:
                 break
 
@@ -104,7 +103,13 @@ class SolanaCollector:
         total = 0
 
         for wallet in self.config["wallets"]:
-            address = str(wallet["address"])
+            address = str(wallet["address"]).strip()
+            if not address or address == "REPLACE_WITH_YOUR_PUBLIC_WALLET":
+                raise ValueError("Set SOLANA_WALLET_ADDRESS to your Solana public wallet address")
+            if len(address) < 32 or len(address) > 44:
+                raise ValueError("Invalid Solana wallet address length")
+
+            self.rpc_call("getAccountInfo", [address, {"encoding": "base64"}])
             state = self.db.execute(
                 "SELECT last_signature FROM collector_state WHERE wallet = ?",
                 [address],
@@ -146,9 +151,7 @@ class SolanaCollector:
                 )
                 total += 1
 
-            latest = self.rpc_call(
-                "getSignaturesForAddress", [address, {"limit": 1}]
-            ) or []
+            latest = self.rpc_call("getSignaturesForAddress", [address, {"limit": 1}]) or []
             if latest:
                 self.db.execute(
                     """INSERT OR REPLACE INTO collector_state
@@ -169,11 +172,19 @@ class SolanaCollector:
             print(f"events collected: {self.collect_once()}", flush=True)
             time.sleep(max(0, interval - (time.monotonic() - started)))
 
+    def close(self):
+        self.db.close()
+
 
 def load_config(path="configs/config.yaml"):
     import yaml
     with open(path, encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        config = yaml.safe_load(f)
+
+    env_wallet = os.getenv("SOLANA_WALLET_ADDRESS")
+    if env_wallet:
+        config["wallets"][0]["address"] = env_wallet.strip()
+    return config
 
 
 if __name__ == "__main__":
