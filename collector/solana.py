@@ -53,8 +53,8 @@ class SolanaCollector:
         for mint in mints:
             self.db.execute(
                 """INSERT INTO observed_tokens (wallet, mint, first_seen, last_seen)
-                VALUES (?, ?, current_timestamp, current_timestamp)
-                ON CONFLICT (wallet, mint) DO UPDATE SET last_seen = current_timestamp""",
+                VALUES (?, ?, now(), now())
+                ON CONFLICT (wallet, mint) DO UPDATE SET last_seen = now()""",
                 [address, mint],
             )
         return mints
