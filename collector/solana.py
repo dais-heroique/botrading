@@ -106,7 +106,7 @@ class SolanaCollector:
             address = str(wallet["address"]).strip()
             if not address or address == "REPLACE_WITH_YOUR_PUBLIC_WALLET":
                 raise ValueError("Set SOLANA_WALLET_ADDRESS to your Solana public wallet address")
-            if len(address) < 32 or len(address) > 44:
+            if len(address) < 32 or len(address) > 48:
                 raise ValueError("Invalid Solana wallet address length")
 
             self.rpc_call("getAccountInfo", [address, {"encoding": "base64"}])
