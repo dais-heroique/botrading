@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS wallet_tokens (
  updated_at TIMESTAMP,
  PRIMARY KEY(wallet, mint, token_account)
 );
-CREATE TABLE IF NOT EXISTS collector_state (
+CREATE TABLE IF NOT EXISTS observed_tokens (\n wallet TEXT,\n mint TEXT,\n first_seen TIMESTAMP,\n last_seen TIMESTAMP,\n PRIMARY KEY(wallet, mint)\n);\nCREATE TABLE IF NOT EXISTS collector_state (
  wallet TEXT PRIMARY KEY,
  last_signature TEXT,
  updated_at TIMESTAMP
