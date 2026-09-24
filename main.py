@@ -14,6 +14,7 @@ def main():
     p.add_argument("--label", action="store_true")
     p.add_argument("--risk-check", action="store_true")
     p.add_argument("--learn", action="store_true")
+    p.add_argument("--discover-wallets", action="store_true")
     p.add_argument("--tp", type=float, default=0.05)
     p.add_argument("--sl", type=float, default=0.03)
     p.add_argument("--horizon", type=int, default=20)
@@ -23,6 +24,12 @@ def main():
     if args.init_db:
         connect(cfg["database"]).close()
         print("database initialized")
+    if args.discover_wallets:
+        collector = SolanaCollector(cfg)
+        try:
+            print(f"axiom wallets discovered: {collector.discover_axiom_wallets()}")
+        finally:
+            collector.close()
     if args.collect or args.watch:
         collector = SolanaCollector(cfg)
         try:
