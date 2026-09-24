@@ -226,7 +226,13 @@ class SolanaCollector:
                     [address, latest[0]["signature"]],
                 )
 
+            self._backfill_observed_tokens(address)
             mints = self._sync_tokens(address)
+            observed = self.db.execute(
+                "SELECT mint FROM observed_tokens WHERE wallet = ?",
+                [address],
+            ).fetchall()
+            mints = sorted(set(mints) | {row[0] for row in observed})
             self._snapshot_markets(address, mints)
 
         self.db.commit()
