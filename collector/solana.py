@@ -115,13 +115,20 @@ class SolanaCollector:
 
             for row in reversed(fresh):
                 signature = row["signature"]
+                exists = self.db.execute(
+                    "SELECT 1 FROM wallet_events WHERE wallet = ? AND signature = ?",
+                    [address, signature],
+                ).fetchone()
+                if exists:
+                    continue
+
                 try:
                     tx = self._transaction(signature)
                 except RuntimeError:
                     tx = {"collector_error": "transaction_unavailable"}
 
                 self.db.execute(
-                    """INSERT OR IGNORE INTO wallet_events
+                    """INSERT INTO wallet_events
                     (wallet, signature, block_time, slot, err, memo, raw_json, tx_json)
                     VALUES (?, ?, CASE WHEN ? IS NULL THEN NULL ELSE to_timestamp(?) END,
                             ?, ?, ?, ?, ?)""",
