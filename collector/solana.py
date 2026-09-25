@@ -264,8 +264,12 @@ class SolanaCollector:
                             results[row["signature"]] = tx
                         except Exception as exc:
                             fetch_failed = True
-                            print(
-                                if index == 1 or index % 25 == 0 or index == len(pending):
+                            if index == 1 or index % 25 == 0 or index == len(pending):
+                                print(
+                                    f"[{wallet_name}] tx {index}/{len(pending)} failed: {type(exc).__name__}",
+                                    flush=True,
+                                )
+                        if index == 1 or index % 25 == 0 or index == len(pending):
                                     print(f"[{wallet_name}] tx {index}/{len(pending)} failed: {type(exc).__name__}", flush=True)
                                 flush=True,
                             )
