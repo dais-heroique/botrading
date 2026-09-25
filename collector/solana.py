@@ -1,6 +1,7 @@
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 
 from collector.market import MarketData
@@ -21,7 +22,7 @@ class SolanaCollector:
         last = None
         for url in self.rpc:
             try:
-                response = requests.post(url, json=payload, timeout=20)
+                response = requests.post(url, json=payload, timeout=8)
                 response.raise_for_status()
                 data = response.json()
                 if "error" not in data:
@@ -230,43 +231,71 @@ class SolanaCollector:
             last_signature = state[0] if state else None
 
             fresh = self._new_signatures(address, last_signature, limit, max_pages)
-            fetch_failed = False
-
+            pending = []
             for row in reversed(fresh):
                 signature = row["signature"]
                 exists = self.db.execute(
                     "SELECT 1 FROM wallet_events WHERE wallet = ? AND signature = ?",
                     [address, signature],
                 ).fetchone()
-                if exists:
-                    continue
+                if not exists:
+                    pending.append(row)
 
-                try:
-                    tx = self._transaction(signature)
+            print(
+                f"[{wallet_name}] signatures={len(fresh)} pending={len(pending)}",
+                flush=True,
+            )
+
+            fetch_failed = False
+            results = {}
+            if pending:
+                workers = min(8, len(pending))
+                with ThreadPoolExecutor(max_workers=workers) as executor:
+                    futures = {
+                        executor.submit(self._transaction, row["signature"]): row
+                        for row in pending
+                    }
+                    for index, future in enumerate(as_completed(futures), 1):
+                        row = futures[future]
+                        try:
+                            tx = future.result()
+                            if tx is None:
+                                raise RuntimeError("transaction unavailable")
+                            results[row["signature"]] = tx
+                        except Exception as exc:
+                            fetch_failed = True
+                            print(
+                                f"[{wallet_name}] tx {index}/{len(pending)} failed: {type(exc).__name__}",
+                                flush=True,
+                            )
+                        if index == 1 or index % 25 == 0 or index == len(pending):
+                            print(f"[{wallet_name}] transactions {index}/{len(pending)}", flush=True)
+
+                for row in pending:
+                    signature = row["signature"]
+                    tx = results.get(signature)
                     if tx is None:
-                        raise RuntimeError("transaction unavailable")
-                except RuntimeError:
-                    fetch_failed = True
-                    continue
+                        continue
+                    self.db.execute(
+                        """INSERT INTO wallet_events
+                        (wallet, signature, block_time, slot, err, memo, raw_json, tx_json)
+                        VALUES (?, ?, CASE WHEN ? IS NULL THEN NULL ELSE to_timestamp(?) END,
+                                ?, ?, ?, ?, ?)""",
+                        [
+                            address,
+                            signature,
+                            row.get("blockTime"),
+                            row.get("blockTime"),
+                            row.get("slot"),
+                            json.dumps(row.get("err")),
+                            row.get("memo"),
+                            json.dumps(row),
+                            json.dumps(tx),
+                        ],
+                    )
+                    total += 1
 
-                self.db.execute(
-                    """INSERT INTO wallet_events
-                    (wallet, signature, block_time, slot, err, memo, raw_json, tx_json)
-                    VALUES (?, ?, CASE WHEN ? IS NULL THEN NULL ELSE to_timestamp(?) END,
-                            ?, ?, ?, ?, ?)""",
-                    [
-                        address,
-                        signature,
-                        row.get("blockTime"),
-                        row.get("blockTime"),
-                        row.get("slot"),
-                        json.dumps(row.get("err")),
-                        row.get("memo"),
-                        json.dumps(row),
-                        json.dumps(tx),
-                    ],
-                )
-                total += 1
+            print(f"[{wallet_name}] saved={len(results)}", flush=True)
 
             latest = self.rpc_call("getSignaturesForAddress", [address, {"limit": 1}]) or []
             if latest and not fetch_failed:
@@ -279,12 +308,14 @@ class SolanaCollector:
 
             self._backfill_observed_tokens(address)
             mints = self._sync_tokens(address)
+            print(f"[{wallet_name}] tokens={len(mints)}", flush=True)
             observed = self.db.execute(
                 "SELECT mint FROM observed_tokens WHERE wallet = ?",
                 [address],
             ).fetchall()
             mints = sorted(set(mints) | {row[0] for row in observed})
-            self._snapshot_markets(address, mints)
+            snapshots = self._snapshot_markets(address, mints)
+            print(f"[{wallet_name}] market_snapshots={snapshots}", flush=True)
 
         self.db.commit()
         return total
