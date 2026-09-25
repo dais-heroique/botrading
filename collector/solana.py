@@ -270,10 +270,6 @@ class SolanaCollector:
                                     flush=True,
                                 )
                         if index == 1 or index % 25 == 0 or index == len(pending):
-                                    print(f"[{wallet_name}] tx {index}/{len(pending)} failed: {type(exc).__name__}", flush=True)
-                                flush=True,
-                            )
-                        if index == 1 or index % 25 == 0 or index == len(pending):
                             print(f"[{wallet_name}] transactions {index}/{len(pending)}", flush=True)
 
                 for row in pending:
