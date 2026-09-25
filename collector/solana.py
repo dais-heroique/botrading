@@ -249,7 +249,7 @@ class SolanaCollector:
             fetch_failed = False
             results = {}
             if pending:
-                workers = min(8, len(pending))
+                workers = min(4, len(pending))
                 with ThreadPoolExecutor(max_workers=workers) as executor:
                     futures = {
                         executor.submit(self._transaction, row["signature"]): row
@@ -265,7 +265,8 @@ class SolanaCollector:
                         except Exception as exc:
                             fetch_failed = True
                             print(
-                                f"[{wallet_name}] tx {index}/{len(pending)} failed: {type(exc).__name__}",
+                                if index == 1 or index % 25 == 0 or index == len(pending):
+                                    print(f"[{wallet_name}] tx {index}/{len(pending)} failed: {type(exc).__name__}", flush=True)
                                 flush=True,
                             )
                         if index == 1 or index % 25 == 0 or index == len(pending):
