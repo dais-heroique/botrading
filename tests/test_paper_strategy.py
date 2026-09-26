@@ -1,6 +1,6 @@
 import unittest
 
-from paper_trader.strategy import StrategyConfig, should_enter, exit_reason
+from paper_trader.strategy import StrategyConfig, should_enter, exit_reason, token_timestamp
 
 
 class PaperStrategyTests(unittest.TestCase):
@@ -24,6 +24,9 @@ class PaperStrategyTests(unittest.TestCase):
         )
         self.assertFalse(ok)
         self.assertEqual(reason, "low_liquidity")
+
+    def test_normalizes_millisecond_timestamp(self):
+        self.assertEqual(token_timestamp({"timestamp": 950_000}, 1_000.0), 950.0)
 
     def test_take_profit(self):
         self.assertEqual(
