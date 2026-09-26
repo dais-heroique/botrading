@@ -56,16 +56,28 @@ class PaperTrader:
             "pair": pair.get("pairAddress"),
         }
 
+    def _market_with_retry(self, mint, attempts=4, delay=2.0):
+        for attempt in range(attempts):
+            market = self.market(mint)
+            if market is not None:
+                return market
+            if attempt + 1 < attempts:
+                time.sleep(delay)
+        return None
+
     def _now(self):
         return time.time()
 
     def on_token(self, token):
+        if not isinstance(token, dict):
+            return
+
         mint = token.get("mint")
         if not mint or mint in self.positions:
             return
 
         try:
-            market = self.market(mint)
+            market = self._market_with_retry(mint)
         except Exception as exc:
             self.db.execute(
                 """INSERT INTO paper_signals
@@ -84,6 +96,31 @@ class PaperTrader:
                 ],
             )
             self.db.commit()
+            return
+
+        if market is None:
+            self.db.execute(
+                """INSERT INTO paper_signals
+                   (ts, mint, symbol, action, reason, price, liquidity, volume, details)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    datetime.utcnow(),
+                    mint,
+                    token.get("symbol"),
+                    "SKIP",
+                    "market_not_indexed_yet",
+                    None,
+                    None,
+                    None,
+                    token.get("protocol"),
+                ],
+            )
+            self.db.commit()
+            print(
+                f"[paper] {token.get('protocol')} "
+                f"{token.get('symbol') or mint[:8]} SKIP market_not_indexed_yet",
+                flush=True,
+            )
             return
 
         now = self._now()
