@@ -33,16 +33,25 @@ class SolanaCollector:
         raise RuntimeError(f"RPC unavailable: {last}")
 
     def _transaction(self, signature):
-        return self.rpc_call(
-            "getTransaction",
-            [
-                signature,
-                {
-                    "encoding": "jsonParsed",
-                    "maxSupportedTransactionVersion": 1,
-                },
-            ],
-        )
+        last = None
+        for attempt in range(3):
+            try:
+                return self.rpc_call(
+                    "getTransaction",
+                    [
+                        signature,
+                        {
+                            "encoding": "jsonParsed",
+                            "maxSupportedTransactionVersion": 1,
+                        },
+                    ],
+                )
+            except RuntimeError as exc:
+                last = exc
+                if attempt < 2:
+                    time.sleep(0.5 * (2 ** attempt))
+        raise RuntimeError(str(last))
+
 
     def _record_observed_mints(self, address, tx):
         mints = set()
