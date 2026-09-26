@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 
 @dataclass(frozen=True)
@@ -20,6 +21,25 @@ class StrategyConfig:
         return min(self.max_position_fraction, 1.0)
 
 
+def token_timestamp(token, fallback):
+    value = token.get("timestamp") or token.get("_received_at")
+    if value is None:
+        return fallback
+    if isinstance(value, (int, float)):
+        value = float(value)
+        if value > 10_000_000_000:
+            value /= 1000.0
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(
+                value.replace("Z", "+00:00")
+            ).timestamp()
+        except ValueError:
+            return fallback
+    return fallback
+
+
 def should_enter(token, market, now_ts, cfg):
     if not market:
         return False, "no_market_data"
@@ -27,11 +47,11 @@ def should_enter(token, market, now_ts, cfg):
     price = market.get("price")
     liquidity = market.get("liquidity")
     volume = market.get("volume")
-    created = token.get("timestamp") or token.get("_received_at")
-    if not price or not liquidity or not volume or not created:
+    created = token_timestamp(token, now_ts)
+    if not price or not liquidity:
         return False, "incomplete_market_data"
 
-    age_minutes = max(0.0, (now_ts - float(created)) / 60.0)
+    age_minutes = max(0.0, (now_ts - created) / 60.0)
     if age_minutes > cfg.max_entry_age_minutes:
         return False, "too_old"
     if liquidity < cfg.min_liquidity_usd:
