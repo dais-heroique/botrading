@@ -20,9 +20,10 @@ class StrategyConfig:
         return min(self.max_position_fraction, 1.0)
 
 
-def should_enter(token, market, now_ts):
+def should_enter(token, market, now_ts, cfg):
     if not market:
         return False, "no_market_data"
+
     price = market.get("price")
     liquidity = market.get("liquidity")
     volume = market.get("volume")
@@ -31,16 +32,24 @@ def should_enter(token, market, now_ts):
         return False, "incomplete_market_data"
 
     age_minutes = max(0.0, (now_ts - float(created)) / 60.0)
-    if age_minutes > StrategyConfig.max_entry_age_minutes:
+    if age_minutes > cfg.max_entry_age_minutes:
         return False, "too_old"
-    if liquidity < StrategyConfig.min_liquidity_usd:
+    if liquidity < cfg.min_liquidity_usd:
         return False, "low_liquidity"
-    if volume < StrategyConfig.min_volume_24h_usd:
+    if volume < cfg.min_volume_24h_usd:
         return False, "low_volume"
     return True, "entry_filter_passed"
 
 
-def exit_reason(entry_price, current_price, entry_ts, now_ts, entry_liquidity, current_liquidity, cfg):
+def exit_reason(
+    entry_price,
+    current_price,
+    entry_ts,
+    now_ts,
+    entry_liquidity,
+    current_liquidity,
+    cfg,
+):
     change = current_price / entry_price - 1.0
     if change >= cfg.take_profit:
         return "take_profit"
