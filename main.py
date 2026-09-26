@@ -1,15 +1,19 @@
 import argparse
+
 from collector.solana import SolanaCollector, load_config
 from labeling.pipeline import label_database
 from storage.db import connect
 from risk.engine import RiskEngine
 from models.train import train, save_model
+from paper_trader.engine import PaperTrader
+from paper_trader.feed import NewTokenFeed
 
 
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--collect", action="store_true")
     p.add_argument("--watch", action="store_true")
+    p.add_argument("--paper-trade", action="store_true")
     p.add_argument("--init-db", action="store_true")
     p.add_argument("--label", action="store_true")
     p.add_argument("--risk-check", action="store_true")
@@ -24,12 +28,14 @@ def main():
     if args.init_db:
         connect(cfg["database"]).close()
         print("database initialized")
+
     if args.discover_wallets:
         collector = SolanaCollector(cfg)
         try:
             print(f"axiom wallets discovered: {collector.discover_axiom_wallets()}")
         finally:
             collector.close()
+
     if args.collect or args.watch:
         collector = SolanaCollector(cfg)
         try:
@@ -39,11 +45,21 @@ def main():
                 print(f"events collected: {collector.collect_once()}")
         finally:
             collector.close()
+
+    if args.paper_trade:
+        trader = PaperTrader(cfg["database"])
+        feed = NewTokenFeed(protocols=["PUMPFUN", "PUMPSWAP"])
+        try:
+            trader.run(feed)
+        finally:
+            trader.db.close()
+
     if args.label:
         print(
             f"labels written: "
             f"{label_database(cfg, tp=args.tp, sl=args.sl, horizon=args.horizon)}"
         )
+
     if args.learn:
         db = connect(cfg["database"])
         snapshots = db.execute(
@@ -58,7 +74,15 @@ def main():
             raise ValueError("no labeled market snapshots; run --label first")
         model, accuracy, features, rows = train(snapshots)
         path = save_model(model, features, accuracy, rows)
-        print({"model": path, "rows": rows, "test_accuracy": accuracy, "classes": model.classes_.tolist()})
+        print(
+            {
+                "model": path,
+                "rows": rows,
+                "test_accuracy": accuracy,
+                "classes": model.classes_.tolist(),
+            }
+        )
+
     if args.risk_check:
         ok, reasons = RiskEngine().validate(0, 0, 0)
         print({"allowed": ok, "reasons": reasons})
