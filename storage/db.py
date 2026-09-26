@@ -22,7 +22,14 @@ CREATE TABLE IF NOT EXISTS wallet_tokens (
  updated_at TIMESTAMP,
  PRIMARY KEY(wallet, mint, token_account)
 );
-CREATE TABLE IF NOT EXISTS observed_tokens (\n wallet TEXT,\n mint TEXT,\n first_seen TIMESTAMP,\n last_seen TIMESTAMP,\n PRIMARY KEY(wallet, mint)\n);\nCREATE TABLE IF NOT EXISTS collector_state (
+CREATE TABLE IF NOT EXISTS observed_tokens (
+ wallet TEXT,
+ mint TEXT,
+ first_seen TIMESTAMP,
+ last_seen TIMESTAMP,
+ PRIMARY KEY(wallet, mint)
+);
+CREATE TABLE IF NOT EXISTS collector_state (
  wallet TEXT PRIMARY KEY,
  last_signature TEXT,
  updated_at TIMESTAMP
@@ -54,6 +61,44 @@ CREATE TABLE IF NOT EXISTS labels (
  label INTEGER,
  barrier TEXT,
  return DOUBLE
+);
+CREATE TABLE IF NOT EXISTS paper_signals (
+ ts TIMESTAMP,
+ mint TEXT,
+ symbol TEXT,
+ action TEXT,
+ reason TEXT,
+ price DOUBLE,
+ liquidity DOUBLE,
+ volume DOUBLE,
+ details TEXT
+);
+CREATE TABLE IF NOT EXISTS paper_positions (
+ mint TEXT PRIMARY KEY,
+ symbol TEXT,
+ name TEXT,
+ status TEXT,
+ entry_ts TIMESTAMP,
+ entry_price DOUBLE,
+ entry_liquidity DOUBLE,
+ quantity DOUBLE,
+ invested DOUBLE,
+ exit_ts TIMESTAMP,
+ exit_price DOUBLE,
+ pnl DOUBLE,
+ exit_reason TEXT
+);
+CREATE TABLE IF NOT EXISTS paper_trades (
+ ts TIMESTAMP,
+ mint TEXT,
+ symbol TEXT,
+ side TEXT,
+ entry_price DOUBLE,
+ exit_price DOUBLE,
+ invested DOUBLE,
+ exit_value DOUBLE,
+ pnl DOUBLE,
+ reason TEXT
 );
 """
 
