@@ -26,7 +26,10 @@ class PaperStrategyTests(unittest.TestCase):
         self.assertEqual(reason, "low_liquidity")
 
     def test_normalizes_millisecond_timestamp(self):
-        self.assertEqual(token_timestamp({"timestamp": 950_000}, 1_000.0), 950.0)
+        self.assertEqual(
+            token_timestamp({"timestamp": 950_000_000_000}, 1_000.0),
+            950_000_000.0,
+        )
 
     def test_take_profit(self):
         self.assertEqual(
