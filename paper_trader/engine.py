@@ -1,5 +1,6 @@
+import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 
 import requests
 
@@ -25,9 +26,14 @@ class PaperTrader:
         ).fetchall()
         for row in rows:
             self.positions[row[0]] = {
-                "mint": row[0], "symbol": row[1], "entry_ts": row[2].timestamp(),
-                "entry_price": row[3], "entry_liquidity": row[4],
-                "quantity": row[5], "invested": row[6], "name": row[7],
+                "mint": row[0],
+                "symbol": row[1],
+                "entry_ts": row[2].timestamp(),
+                "entry_price": row[3],
+                "entry_liquidity": row[4],
+                "quantity": row[5],
+                "invested": row[6],
+                "name": row[7],
             }
 
     def market(self, mint):
@@ -39,7 +45,10 @@ class PaperTrader:
         ]
         if not pairs:
             return None
-        pair = max(pairs, key=lambda p: float((p.get("liquidity") or {}).get("usd") or 0))
+        pair = max(
+            pairs,
+            key=lambda p: float((p.get("liquidity") or {}).get("usd") or 0),
+        )
         return {
             "price": float(pair["priceUsd"]) if pair.get("priceUsd") else None,
             "volume": float((pair.get("volume") or {}).get("h24") or 0),
@@ -62,8 +71,17 @@ class PaperTrader:
                 """INSERT INTO paper_signals
                    (ts, mint, symbol, action, reason, price, liquidity, volume, details)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                [datetime.utcnow(), mint, token.get("symbol"), "SKIP",
-                 "market_error", None, None, None, str(exc)],
+                [
+                    datetime.utcnow(),
+                    mint,
+                    token.get("symbol"),
+                    "SKIP",
+                    "market_error",
+                    None,
+                    None,
+                    None,
+                    str(exc),
+                ],
             )
             self.db.commit()
             return
@@ -74,14 +92,25 @@ class PaperTrader:
             """INSERT INTO paper_signals
                (ts, mint, symbol, action, reason, price, liquidity, volume, details)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            [datetime.utcnow(), mint, token.get("symbol"), "ENTER" if ok else "SKIP",
-             reason, market.get("price"), market.get("liquidity"),
-             market.get("volume"), token.get("protocol")],
+            [
+                datetime.utcnow(),
+                mint,
+                token.get("symbol"),
+                "ENTER" if ok else "SKIP",
+                reason,
+                market.get("price"),
+                market.get("liquidity"),
+                market.get("volume"),
+                token.get("protocol"),
+            ],
         )
 
         if ok:
             equity = self.equity()
-            cash_to_use = min(equity * self.cfg.position_fraction, self.cash_available())
+            cash_to_use = min(
+                equity * self.cfg.position_fraction,
+                self.cash_available(),
+            )
             if cash_to_use > 0 and market["price"] > 0:
                 effective_entry = market["price"] * (
                     1 + self.cfg.fee_fraction + self.cfg.slippage_fraction
@@ -92,21 +121,32 @@ class PaperTrader:
                        (mint, symbol, name, status, entry_ts, entry_price,
                         entry_liquidity, quantity, invested)
                        VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?)""",
-                    [mint, token.get("symbol"), token.get("name"),
-                     datetime.utcnow(), effective_entry, market["liquidity"],
-                     quantity, cash_to_use],
+                    [
+                        mint,
+                        token.get("symbol"),
+                        token.get("name"),
+                        datetime.utcnow(),
+                        effective_entry,
+                        market["liquidity"],
+                        quantity,
+                        cash_to_use,
+                    ],
                 )
                 self.positions[mint] = {
-                    "mint": mint, "symbol": token.get("symbol"),
-                    "name": token.get("name"), "entry_ts": now,
+                    "mint": mint,
+                    "symbol": token.get("symbol"),
+                    "name": token.get("name"),
+                    "entry_ts": now,
                     "entry_price": effective_entry,
                     "entry_liquidity": market["liquidity"],
-                    "quantity": quantity, "invested": cash_to_use,
+                    "quantity": quantity,
+                    "invested": cash_to_use,
                 }
 
         self.db.commit()
         print(
-            f"[paper] {token.get('protocol')} {token.get('symbol') or mint[:8]} "
+            f"[paper] {token.get('protocol')} "
+            f"{token.get('symbol') or mint[:8]} "
             f"{'ENTER' if ok else 'SKIP'} {reason}",
             flush=True,
         )
@@ -165,15 +205,29 @@ class PaperTrader:
                    (ts, mint, symbol, side, entry_price, exit_price,
                     invested, exit_value, pnl, reason)
                    VALUES (?, ?, ?, 'SELL', ?, ?, ?, ?, ?, ?)""",
-                [datetime.utcnow(), mint, position["symbol"],
-                 position["entry_price"], market["price"],
-                 position["invested"], exit_value, pnl, reason],
+                [
+                    datetime.utcnow(),
+                    mint,
+                    position["symbol"],
+                    position["entry_price"],
+                    market["price"],
+                    position["invested"],
+                    exit_value,
+                    pnl,
+                    reason,
+                ],
             )
             self.db.execute(
                 """UPDATE paper_positions
                    SET status='closed', exit_ts=?, exit_price=?, pnl=?, exit_reason=?
                    WHERE mint=? AND status='open'""",
-                [datetime.utcnow(), market["price"], pnl, reason, mint],
+                [
+                    datetime.utcnow(),
+                    market["price"],
+                    pnl,
+                    reason,
+                    mint,
+                ],
             )
             del self.positions[mint]
             self.db.commit()
@@ -190,8 +244,16 @@ class PaperTrader:
             flush=True,
         )
 
-        def wrapped(token):
-            self.on_token(token)
-            self.check_positions()
+        stop = threading.Event()
 
-        feed.stream(wrapped)
+        def monitor():
+            while not stop.wait(5):
+                self.check_positions()
+
+        thread = threading.Thread(target=monitor, daemon=True)
+        thread.start()
+        try:
+            feed.stream(self.on_token)
+        finally:
+            stop.set()
+            thread.join(timeout=2)
